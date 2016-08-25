@@ -46,7 +46,7 @@ defmodule Phoenix.CodeReloader.Server do
   end
 
   def handle_call(:reload!, _from, {_app, _mod, _compilers, false = _exec_compile} = state) do
-    {:noreply, state}
+    {:reply, :ok, state}
   end
   def handle_call(:reload!, from, {app, mod, compilers, true = _exec_compile} = state) do
     backup = load_backup(mod)
