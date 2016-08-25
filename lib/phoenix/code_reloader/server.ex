@@ -42,13 +42,13 @@ defmodule Phoenix.CodeReloader.Server do
 
     all = Mix.Project.config[:compilers] || Mix.compilers
     compilers = all -- (all -- compilers)
-    {:ok, {app, mod, compilers, !fs_available}}
+    {:ok, {app, mod, compilers, _exec_compile = !fs_available}}
   end
 
   def handle_call(:reload!, _from, {_app, _mod, _compilers, false = _exec_compile} = state) do
     {:reply, :ok, state}
   end
-  def handle_call(:reload!, from, {app, mod, compilers, true = _exec_compile} = state) do
+  def handle_call(:reload!, from, {app, mod, compilers, true = _exec_compile} = _state) do
     backup = load_backup(mod)
     froms  = all_waiting([from])
 
@@ -75,7 +75,7 @@ defmodule Phoenix.CodeReloader.Server do
       end
 
     Enum.each(froms, &GenServer.reply(&1, reply))
-    {:noreply, state}
+    {:noreply, {app, mod, compilers, _exec_compile = false}}
   end
 
   def handle_info({_pid, {:fs, :file_event}, {path, _event}}, {app, mod, compilers, _exec_compile} = state) do
