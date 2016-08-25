@@ -3,6 +3,12 @@ defmodule Phoenix.CodeReloader.Server do
   @moduledoc false
   use GenServer
 
+  @patterns [
+    ~r{.*(ex)$},
+    ~r{.*(eex)$},
+    ~r{.*(exs)$},
+  ]
+
   require Logger
   alias Phoenix.CodeReloader.Proxy
 
@@ -26,12 +32,23 @@ defmodule Phoenix.CodeReloader.Server do
   ## Callbacks
 
   def init({app, mod, compilers}) do
+    fs_available =
+      case :erlang.function_exported(:fs, :subscribe, 0) do
+        true ->
+          :fs.subscribe()
+          true
+        _ -> false
+      end
+
     all = Mix.Project.config[:compilers] || Mix.compilers
     compilers = all -- (all -- compilers)
-    {:ok, {app, mod, compilers}}
+    {:ok, {app, mod, compilers, !fs_available}}
   end
 
-  def handle_call(:reload!, from, {app, mod, compilers} = state) do
+  def handle_call(:reload!, _from, {_app, _mod, _compilers, false = _exec_compile} = state) do
+    {:noreply, state}
+  end
+  def handle_call(:reload!, from, {app, mod, compilers, true = _exec_compile} = state) do
     backup = load_backup(mod)
     froms  = all_waiting([from])
 
@@ -59,6 +76,23 @@ defmodule Phoenix.CodeReloader.Server do
 
     Enum.each(froms, &GenServer.reply(&1, reply))
     {:noreply, state}
+  end
+
+  def handle_info({_pid, {:fs, :file_event}, {path, _event}}, {app, mod, compilers, _exec_compile} = state) do
+    state =
+      if matches_any_pattern?(path, @patterns) do
+        {app, mod, compilers, true}
+      else
+        state
+      end
+    {:noreply, state}
+  end
+
+  defp matches_any_pattern?(path, patterns) do
+    path = to_string(path)
+    Enum.any?(patterns, fn pattern ->
+      String.match?(path, pattern) and !String.match?(path, ~r{(^|/)_build/})
+    end)
   end
 
   defp load_backup(mod) do
